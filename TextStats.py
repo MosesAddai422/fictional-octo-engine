@@ -1,7 +1,9 @@
 
 # Author: <Moses Addai>
 
-# A program that reads a text file and produces stats such as number lines, words per line etc
+# A program that reads a text file and produces stats such as number lines, words per line etc. You can read the sonnet18.txt file
+#which is in the repository
+
 def main():
     fname = input("what file do you want to open? ")
 
