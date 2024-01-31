@@ -1,0 +1,30 @@
+import cvxpy as cp
+import numpy as np
+
+n = 4
+
+//c represents the objective function(returns) that is being maximized. s is the standform form of the problem 
+//and constitutes entries for resources and variances. b comprises the constant limits for resources and variance
+c= np.array([5000,3000,2100,1500])
+s= np.array([[20,50,50,30],[35,22,20,17]])
+b = [100,50]
+
+x = cp.Variable(n)
+
+prob = cp.Problem(cp.Maximize(c.T@x),[s@x<=b,x>=0])
+prob.solve()
+
+print(prob.value)
+print(np.round(x.value,2))
+
+
+print("Status: %s" % prob.status)
+//prob.value produces the optimal value of return
+print("\nThe optimal value is", prob.value)
+print("A solution x is")
+//x.value outputs the respective quantities that gives the optimal return
+print(np.round(x.value),2)
+
+print("A dual solution is")
+print(np.round(prob.constraints[0].dual_value),2) #Ax<=b duals
+print(np.round(prob.constraints[1].dual_value),2) #x>=0 duals
