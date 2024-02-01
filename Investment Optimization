@@ -1,3 +1,7 @@
+cvxpy init
+cvxpy install
+numpy init
+numpy install
 import cvxpy as cp
 import numpy as np
 
