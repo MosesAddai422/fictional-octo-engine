@@ -8,7 +8,7 @@ import numpy as np
 n = 4
 
 //c represents the objective function(returns) that is being maximized. s is the standform form of the problem 
-//and constitutes entries for resources and variances. b comprises the constant limits for resources and variance
+//and constitutes entries for investment resources and variances. b comprises the constant limits for resources and variance
 c= np.array([5000,3000,2100,1500])
 s= np.array([[20,50,50,30],[35,22,20,17]])
 b = [100,50]
