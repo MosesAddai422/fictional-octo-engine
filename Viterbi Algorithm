@@ -1,0 +1,304 @@
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.*;
+
+public class POS {
+    private Map<String, Map<String, Double>> observationProbabilities;
+    private Map<String, Map<String, Double>> transitionProbabilities;
+    private Map<String, Double> initialStateProbabilities;
+    private Set<String> states;
+    private double unseenObservationValue = -10;
+
+
+    public POS(Map<String, Map<String, Double>> observationProbabilities,
+               Map<String, Map<String, Double>> transitionProbabilities,
+               Map<String, Double> initialStateProbabilities,
+               Set<String> states) {
+        this.observationProbabilities = observationProbabilities;
+        this.transitionProbabilities = transitionProbabilities;
+        this.initialStateProbabilities = initialStateProbabilities;
+        this.states = states;
+    }
+
+    //    Method to load file into string form
+    private static String loadFile(String filename) throws Exception {
+        BufferedReader in = new BufferedReader(new FileReader(filename));
+        String str = "", line;
+        while ((line = in.readLine()) != null) str += line;
+        in.close();
+        return str;
+    }
+
+    public List<String> viterbiDecode(String[] observations) {
+        int numObservations = observations.length;
+
+        Map<String, Map<Integer, Double>> viterbi = new HashMap<>();
+        Map<String, Map<Integer, String>> backpointer = new HashMap<>();
+
+        // Initialization
+        for (String state : states) {
+            viterbi.put(state, new HashMap<>());
+            backpointer.put(state, new HashMap<>());
+
+            double observationProb = observationProbabilities.getOrDefault(state, new HashMap<>()).getOrDefault(observations[0], unseenObservationValue);
+            viterbi.get(state).put(0, initialStateProbabilities.getOrDefault(state, 0.0) + observationProb);
+            backpointer.get(state).put(0, "");
+        }
+
+        // Calculating scores
+        for (int t = 1; t < numObservations; t++) {
+            for (String s : states) {
+                double maxProb = Double.NEGATIVE_INFINITY;
+                String maxState = "";
+
+                for (String prevState : states) {
+                    double transitionProb = transitionProbabilities.getOrDefault(prevState, new HashMap<>()).getOrDefault(s, 0.0);
+                    double observationProb = observationProbabilities.getOrDefault(s, new HashMap<>()).getOrDefault(observations[t], unseenObservationValue);
+                    double prob = viterbi.get(prevState).get(t - 1) + transitionProb + observationProb;
+                    if (prob > maxProb) {
+                        maxProb = prob;
+                        maxState = prevState;
+                    }
+                }
+
+                viterbi.get(s).put(t, maxProb);
+                backpointer.get(s).put(t, maxState);
+            }
+        }
+
+        // Termination
+        double maxFinalProb = Double.NEGATIVE_INFINITY;
+        String maxFinalState = "";
+        for (String s : states) {
+            double finalProb = viterbi.get(s).get(numObservations - 1);
+            if (finalProb > maxFinalProb) {
+                maxFinalProb = finalProb;
+                maxFinalState = s;
+            }
+        }
+
+        // Backtrack
+        List<String> bestSequence = new ArrayList<>();
+        String currentState = maxFinalState;
+        for (int t = numObservations - 1; t >= 0; t--) {
+            bestSequence.add(0, currentState);
+            currentState = backpointer.get(currentState).get(t);
+        }
+
+        return bestSequence;
+    }
+
+//    Trainer for Model
+    public void trainModel(String sentencesFile, String tagsFile) throws IOException {
+        BufferedReader sentencesReader = new BufferedReader(new FileReader(sentencesFile));
+        BufferedReader tagsReader = new BufferedReader(new FileReader(tagsFile));
+
+        String sentenceLine, tagsLine;
+        while ((sentenceLine = sentencesReader.readLine()) != null && (tagsLine = tagsReader.readLine()) != null) {
+            String[] words = sentenceLine.trim().split("\\s+");
+            String[] tags = tagsLine.trim().split("\\s+");
+
+            // Update initial state probabilities
+            String initialTag = tags[0];
+            initialStateProbabilities.put(initialTag, initialStateProbabilities.getOrDefault(initialTag, 0.0) + 1);
+
+            // Update transition probabilities
+            for (int i = 0; i < tags.length - 1; i++) {
+                String currentTag = tags[i];
+                String nextTag = tags[i + 1];
+                states.add(currentTag);
+                transitionProbabilities.putIfAbsent(currentTag, new HashMap<>());
+                transitionProbabilities.get(currentTag).put(nextTag, transitionProbabilities.get(currentTag).getOrDefault(nextTag, 0.0) + 1);
+            }
+
+            // Update observation probabilities
+            for (int i = 0; i < words.length; i++) {
+                String word = words[i];
+                String tag = tags[i];
+                states.add(tag);
+                observationProbabilities.putIfAbsent(tag, new HashMap<>());
+                observationProbabilities.get(tag).put(word, observationProbabilities.get(tag).getOrDefault(word, 0.0) + 1);
+            }
+        }
+
+        sentencesReader.close();
+        tagsReader.close();
+
+        // Normalize probabilities
+        normalizeProbabilities();
+    }
+    private void normalizeProbabilities() {
+        // Normalize initial state probabilities
+        double initialTotal = initialStateProbabilities.values().stream().mapToDouble(Double::doubleValue).sum();
+        for (String tag : initialStateProbabilities.keySet()) {
+            initialStateProbabilities.put(tag, initialStateProbabilities.get(tag) / initialTotal);
+        }
+
+        // Normalize transition probabilities
+        for (String fromTag : transitionProbabilities.keySet()) {
+            Map<String, Double> transitions = transitionProbabilities.get(fromTag);
+            double transitionTotal = transitions.values().stream().mapToDouble(Double::doubleValue).sum();
+            for (String toTag : transitions.keySet()) {
+                transitions.put(toTag, transitions.get(toTag) / transitionTotal);
+            }
+        }
+
+        // Normalize observation probabilities
+        for (String tag : observationProbabilities.keySet()) {
+            Map<String, Double> observations = observationProbabilities.get(tag);
+            double observationTotal = observations.values().stream().mapToDouble(Double::doubleValue).sum();
+            for (String word : observations.keySet()) {
+                observations.put(word, observations.get(word) / observationTotal);
+            }
+        }
+    }
+
+//    A console driven method that listens for input from the user and produces tags for the corresponding words
+    public List<String>consoleTest(){
+
+        Scanner scanner = new Scanner(System.in);
+        System.out.print("Testing console-driven method. Please enter a sentence or phrase ");
+        String input = scanner.nextLine();
+
+        String[] observe = input.split(" ");
+        List<String>tags = viterbiDecode(observe);
+        System.out.println("The corresponding tags are as follows");
+        System.out.println(tags);
+
+        return null;
+
+    }
+
+//    A file based test method that runs Vertibi on a sentence file prints out the algorithm's tag classification the actual tags from
+//    the tag file right below it
+    public List<String>fileTest(String sentence, String tag) throws IOException {
+        BufferedReader phrase = new BufferedReader(new FileReader(sentence));
+        BufferedReader tagy = new BufferedReader(new FileReader(tag));
+
+        String sentenceLine, tagsLine;
+
+        System.out.println("Testing file-driven method");
+        while ((sentenceLine = phrase.readLine()) != null && (tagsLine = tagy.readLine()) != null) {
+            String[] words = sentenceLine.trim().split("\\s+");
+            List<String> phrasex = viterbiDecode(words);
+            System.out.println("Phrase/Sentence");
+            System.out.println(Arrays.toString(words));
+            System.out.println("Suggested tags");
+            System.out.println(phrasex);
+            String[] tags = tagsLine.trim().split("\\s+");
+            System.out.println("Actual tags");
+            System.out.println(Arrays.toString(tags));
+
+        }
+
+        return null;
+
+
+    }
+
+//    Method to assign parts of speech to text from a different corpus
+    public void extracred(String filename,String tagy) throws IOException {
+        BufferedReader phrasey = new BufferedReader(new FileReader(filename));
+        BufferedReader tagg = new BufferedReader(new FileReader(tagy));
+        String fileLine, tagLine;
+        System.out.println("Testing effectiveness with the Quebéc Learner Corpus");
+
+        while ((fileLine = phrasey.readLine()) != null && (tagLine = tagg.readLine()) != null) {
+            String[] words = fileLine.trim().split("\\s+");
+            List<String> phrasex = viterbiDecode(words);
+            System.out.println(Arrays.toString(words));
+            System.out.println(phrasex);
+        }
+
+
+    }
+
+
+
+    public static void main(String[] args) throws Exception {
+        // observation probabilities
+        Map<String, Map<String, Double>> observationProbabilities = new HashMap<>();
+        observationProbabilities.put("N", new HashMap<>());
+        observationProbabilities.put("V", new HashMap<>());
+        observationProbabilities.put("NP", new HashMap<>());
+        observationProbabilities.put("MOD", new HashMap<>());
+        observationProbabilities.put("DET", new HashMap<>());
+        observationProbabilities.put("PRO", new HashMap<>());
+        observationProbabilities.put("VD", new HashMap<>());
+
+
+
+        Map<String, Map<String, Double>> transitionProbabilities = new HashMap<>();
+//        transition probs for #
+        transitionProbabilities.put("#", new HashMap<>());
+//        transition probs for NP
+        transitionProbabilities.put("NP", new HashMap<>());
+//        transition probs for VD
+        transitionProbabilities.put("VD", new HashMap<>());
+//        transition probs for PRO
+        transitionProbabilities.put("PRO", new HashMap<>());
+//        transition probs for MOD
+        transitionProbabilities.put("MOD", new HashMap<>());
+//        transition probs for DET
+        transitionProbabilities.put("DET", new HashMap<>());
+//        transition probs for N
+        transitionProbabilities.put("N", new HashMap<>());
+//        transition probs for V
+        transitionProbabilities.put("V", new HashMap<>());
+
+
+
+        Map<String, Double> initialStateProbabilities = new HashMap<>();
+        initialStateProbabilities.put("#", 0.0);
+
+        Set<String> states = new HashSet<>();
+
+
+        POS decoder = new POS(observationProbabilities, transitionProbabilities, initialStateProbabilities, states);
+
+//        Training model with a pairs of sentences files and tag files
+
+//        Training with the simple train file
+//        decoder.trainModel("/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/simple-train-sentences.txt",
+//                "/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/simple-train-tags.txt");
+
+//        Training with the examples file
+//        decoder.trainModel("/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/example-sentences.txt",
+//                "/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/example-tags.txt");
+
+//        Training with the brown test file
+//        decoder.trainModel("/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/brown-test-sentences.txt",
+//                "/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/brown-test-tags.txt");
+
+//        Training with the brown train file
+        decoder.trainModel("/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/brown-train-sentences.txt",
+                "/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/brown-train-tags.txt");
+
+
+
+//Testing method on simple hard-coded graphs and input strings
+        String[] observations = {"London","is","a","beautiful","capital"};
+        System.out.println("Testing input strings");
+        System.out.println(Arrays.toString(observations));
+//        String[] observations = {"Bring","me","the","book"};
+        List<String> bestSequence = decoder.viterbiDecode(observations);
+        System.out.println("Best sequence of tags:");
+        System.out.println(bestSequence);
+
+
+//Testing console-driven testing
+        decoder.consoleTest();
+
+
+
+//  Testing file-driven testing
+        decoder.fileTest("/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/example-sentences.txt",
+                "/Users/mosesodeiaddai/Desktop/Winter 2024/Object-Oriented Programming/Problem Sets/PSet5/texts/example-tags.txt");
+
+
+
+
+
+
