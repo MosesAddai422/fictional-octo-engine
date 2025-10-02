@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Asset Allocation Model - employs mean variance optimization where variance is computed using the 
+Barra equity risk factor model.
+
 Created on Thu Oct  2 10:29:17 2025
 
 @author: mosesodeiaddai
